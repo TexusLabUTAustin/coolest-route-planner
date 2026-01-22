@@ -2,22 +2,25 @@
 nixPkgs = [
   "python311",
   "python311Packages.pip",
-  "expat",
+  "python311Packages.rasterio",
+  "python311Packages.geopandas",
+  "python311Packages.shapely",
+  "python311Packages.pyproj",
+  "python311Packages.numpy",
+  "python311Packages.pandas",
   "gdal",
   "geos",
-  "proj",
-  "sqlite",
-  "zlib",
-  "libjpeg",
-  "libpng"
+  "proj"
 ]
 
 [phases.install]
-cmds = ["pip install --break-system-packages -r requirements.txt"]
+cmds = [
+  "pip install --break-system-packages flask flask-cors requests polyline"
+]
 
 [phases.build]
-cmds = ["chmod +x start.sh"]
+cmds = []
 
 [start]
-cmd = "./start.sh"
+cmd = "python3 backend.py"
 
