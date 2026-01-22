@@ -16,8 +16,8 @@ nixPkgs = [
 cmds = ["pip install --break-system-packages -r requirements.txt"]
 
 [phases.build]
-cmds = []
+cmds = ["chmod +x start.sh"]
 
 [start]
-cmd = "python3 backend.py"
+cmd = "./start.sh"
 
