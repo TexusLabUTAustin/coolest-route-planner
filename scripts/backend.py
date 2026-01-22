@@ -38,6 +38,44 @@ OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 # Create output directory if it doesn't exist
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# Download UTCI file from S3 if it doesn't exist
+def ensure_utci_file():
+    """Download UTCI file from S3 if it doesn't exist locally"""
+    if os.path.exists(GEOTIFF_PATH):
+        print(f"UTCI file found at {GEOTIFF_PATH}")
+        return True
+    
+    s3_url = os.environ.get('UTCI_S3_URL')
+    if not s3_url:
+        print("Warning: UTCI_S3_URL not set. UTCI file will not be available.")
+        return False
+    
+    try:
+        print(f"Downloading UTCI file from S3: {s3_url}")
+        import urllib.request
+        import ssl
+        
+        # Create SSL context that doesn't verify certificates (for some S3 endpoints)
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        # Download with progress
+        def show_progress(block_num, block_size, total_size):
+            downloaded = block_num * block_size
+            percent = min(downloaded * 100 / total_size, 100)
+            print(f"\rDownloading: {percent:.1f}%", end='', flush=True)
+        
+        urllib.request.urlretrieve(s3_url, GEOTIFF_PATH, reporthook=show_progress)
+        print(f"\nUTCI file downloaded successfully to {GEOTIFF_PATH}")
+        return True
+    except Exception as e:
+        print(f"Error downloading UTCI file: {e}")
+        return False
+
+# Ensure UTCI file is available on startup
+ensure_utci_file()
+
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check endpoint"""
