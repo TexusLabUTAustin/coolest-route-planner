@@ -357,7 +357,8 @@ const RoutePlanner = () => {
 
     try {
       console.log('Sending request to backend...', { origin, destination });
-      const response = await axios.post('http://localhost:5001/api/process-route', 
+      const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
+      const response = await axios.post(`${API_URL}/api/process-route`, 
         { origin, destination },
         {
           headers: {

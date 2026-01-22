@@ -15,9 +15,11 @@ import sys
 
 app = Flask(__name__)
 # Update CORS configuration to explicitly allow the React frontend
+# Get allowed origins from environment variable or use defaults
+ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:3001').split(',')
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:3000", "http://localhost:3001"],
+        "origins": ALLOWED_ORIGINS,
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type"]
     }
@@ -165,4 +167,6 @@ def process_route():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001) 
+    port = int(os.environ.get('PORT', 5001))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    app.run(host='0.0.0.0', port=port, debug=debug) 
