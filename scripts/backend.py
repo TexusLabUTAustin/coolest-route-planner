@@ -17,11 +17,15 @@ app = Flask(__name__)
 # Update CORS configuration to explicitly allow the React frontend
 # Get allowed origins from environment variable or use defaults
 ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:3001').split(',')
+# Clean up origins (remove empty strings and strip whitespace)
+ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip()]
+
 CORS(app, resources={
     r"/api/*": {
         "origins": ALLOWED_ORIGINS,
         "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": False
     }
 })
 
@@ -33,6 +37,11 @@ OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 
 # Create output directory if it doesn't exist
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    return jsonify({'status': 'ok', 'message': 'Backend is running'}), 200
 
 @app.route('/api/process-route', methods=['POST'])
 def process_route():
