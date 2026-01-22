@@ -8,7 +8,10 @@ import geopandas as gpd
 import rasterio
 from shapely.geometry import Point
 import os
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    st = None  # streamlit not available (e.g., in Flask backend)
 
 
 
@@ -179,17 +182,18 @@ def set_background_gradient():
     """
     A function to change the background to a gradient.
     """
-    st.markdown(
-        """
-        <style>
-        .stApp {
-            background-image: linear-gradient(to right, lightblue, white);
-            
-        }
-        h1 {
-            color: black !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    if st is not None:
+        st.markdown(
+            """
+            <style>
+            .stApp {
+                background-image: linear-gradient(to right, lightblue, white);
+                
+            }
+            h1 {
+                color: black !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
