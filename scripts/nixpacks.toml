@@ -6,8 +6,6 @@ nixPkgs = [
   "python311Packages.geopandas",
   "python311Packages.shapely",
   "python311Packages.pyproj",
-  "python311Packages.numpy",
-  "python311Packages.pandas",
   "gdal",
   "geos",
   "proj"
@@ -15,7 +13,7 @@ nixPkgs = [
 
 [phases.install]
 cmds = [
-  "pip install --break-system-packages flask flask-cors requests polyline"
+  "pip install --break-system-packages numpy pandas flask flask-cors requests polyline"
 ]
 
 [phases.build]
