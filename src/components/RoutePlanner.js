@@ -1,11 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Cartesian3, Cartesian2, createOsmBuildingsAsync, Ion, Math as CesiumMath, Terrain, Viewer, Color, CallbackProperty, Cartographic, Cesium3DTileStyle, createGooglePhotorealistic3DTileset, IonImageryProvider } from 'cesium';
+import { Cartesian3, Cartesian2, Ion, Math as CesiumMath, Terrain, Viewer, Color, CallbackProperty, Cartographic, Cesium3DTileStyle, createGooglePhotorealistic3DTileset, IonImageryProvider } from 'cesium';
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import axios from 'axios';
 import '../cesiumConfig';
 
 // Set your Cesium ion access token
 Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmMjg0M2EzZC1kM2Q5LTRiOTYtODdhZi04NjA0OGQyZDZkZDMiLCJpZCI6MjkwODI1LCJpYXQiOjE3NDM3NDI0OTl9.WtGmTNEnb4Re5wuCI_F0UFmN7hHF0lEoyxyjBVSkx7s';
+
+// Distinct colors for routes (constant, defined outside component)
+const routeColors = [
+  '#FF5733', // Red-Orange (Warm)
+  '#33A1FF', // Blue (Cooler)
+  '#33FF57', // Green (Coolest)
+  '#FF33A1', // Pink
+  
+  '#A133FF', // Purple
+  '#FFD700', // Gold
+  '#00CED1', // Turquoise
+  '#FF6347', // Tomato
+  '#7B68EE', // Medium Slate Blue
+  '#32CD32', // Lime Green
+];
 
 const RoutePlanner = () => {
   const [origin, setOrigin] = useState('');
@@ -15,7 +30,6 @@ const RoutePlanner = () => {
   const [destinationCoords, setDestinationCoords] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showRoutes, setShowRoutes] = useState(false);
   const [visibleRoutes, setVisibleRoutes] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const cesiumContainer = useRef(null);
@@ -23,21 +37,6 @@ const RoutePlanner = () => {
   const sidebarRef = useRef(null);
   const tilesetRef = useRef(null);
   const imageryLayerRef = useRef(null);
-
-  // Distinct colors for routes
-  const routeColors = [
-    '#FF5733', // Red-Orange (Warm)
-    '#33A1FF', // Blue (Cooler)
-    '#33FF57', // Green (Coolest)
-    '#FF33A1', // Pink
-    
-    '#A133FF', // Purple
-    '#FFD700', // Gold
-    '#00CED1', // Turquoise
-    '#FF6347', // Tomato
-    '#7B68EE', // Medium Slate Blue
-    '#32CD32', // Lime Green
-  ];
 
   // Get route label based on sorted order (warmest first, coolest last)
   const getRouteLabel = (routes, index) => {
@@ -339,7 +338,7 @@ const RoutePlanner = () => {
         });
       };
     }
-  }, [routes, originCoords, destinationCoords]);
+  }, [routes, originCoords, destinationCoords, origin, destination]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -352,7 +351,6 @@ const RoutePlanner = () => {
     setIsSubmitting(true);
     setLoading(true);
     setError(null);
-    setShowRoutes(false);
     setRoutes([]);
 
     try {
@@ -397,7 +395,6 @@ const RoutePlanner = () => {
       
       setTimeout(() => {
         setRoutes(sortedRoutes);
-        setShowRoutes(true);
         setVisibleRoutes([]); // Reset visible routes
         
         // Animate routes appearing one by one in sidebar when map routes start
