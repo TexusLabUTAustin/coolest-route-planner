@@ -41,40 +41,65 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Download UTCI file from S3 if it doesn't exist
 def ensure_utci_file():
     """Download UTCI file from S3 if it doesn't exist locally"""
+    print(f"Checking for UTCI file at: {GEOTIFF_PATH}")
+    print(f"Script directory: {SCRIPT_DIR}")
+    print(f"Current working directory: {os.getcwd()}")
+    
     if os.path.exists(GEOTIFF_PATH):
-        print(f"UTCI file found at {GEOTIFF_PATH}")
+        file_size = os.path.getsize(GEOTIFF_PATH) / (1024 * 1024)  # Size in MB
+        print(f"✓ UTCI file found at {GEOTIFF_PATH} ({file_size:.2f} MB)")
         return True
+    
+    print(f"✗ UTCI file not found at {GEOTIFF_PATH}")
     
     s3_url = os.environ.get('UTCI_S3_URL')
     if not s3_url:
-        print("Warning: UTCI_S3_URL not set. UTCI file will not be available.")
+        print("⚠️  Warning: UTCI_S3_URL environment variable not set.")
+        print("   Please set UTCI_S3_URL in Railway variables with your S3 URL.")
         return False
     
     try:
-        print(f"Downloading UTCI file from S3: {s3_url}")
+        print(f"📥 Downloading UTCI file from S3: {s3_url}")
         import urllib.request
         import ssl
         
-        # Create SSL context that doesn't verify certificates (for some S3 endpoints)
+        # Create SSL context
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
         
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(GEOTIFF_PATH), exist_ok=True)
+        
         # Download with progress
         def show_progress(block_num, block_size, total_size):
-            downloaded = block_num * block_size
-            percent = min(downloaded * 100 / total_size, 100)
-            print(f"\rDownloading: {percent:.1f}%", end='', flush=True)
+            if total_size > 0:
+                downloaded = block_num * block_size
+                percent = min(downloaded * 100 / total_size, 100)
+                mb_downloaded = downloaded / (1024 * 1024)
+                mb_total = total_size / (1024 * 1024)
+                print(f"\r📥 Downloading: {percent:.1f}% ({mb_downloaded:.1f}/{mb_total:.1f} MB)", end='', flush=True)
         
         urllib.request.urlretrieve(s3_url, GEOTIFF_PATH, reporthook=show_progress)
-        print(f"\nUTCI file downloaded successfully to {GEOTIFF_PATH}")
-        return True
+        
+        # Verify download
+        if os.path.exists(GEOTIFF_PATH):
+            file_size = os.path.getsize(GEOTIFF_PATH) / (1024 * 1024)
+            print(f"\n✓ UTCI file downloaded successfully to {GEOTIFF_PATH} ({file_size:.2f} MB)")
+            return True
+        else:
+            print(f"\n✗ Download completed but file not found at {GEOTIFF_PATH}")
+            return False
     except Exception as e:
-        print(f"Error downloading UTCI file: {e}")
+        print(f"✗ Error downloading UTCI file: {e}")
+        import traceback
+        print(traceback.format_exc())
         return False
 
 # Ensure UTCI file is available on startup
-ensure_utci_file()
+utci_available = ensure_utci_file()
+if not utci_available:
+    print("⚠️  WARNING: UTCI file is not available. Route processing will fail.")
 
 @app.route('/api/health', methods=['GET'])
 def health():
@@ -119,6 +144,17 @@ def process_route():
 
         # Process routes
         print("Processing routes with UTCI data...")
+        
+        # Verify UTCI file exists
+        if not os.path.exists(GEOTIFF_PATH):
+            error_msg = f"UTCI file not found at {GEOTIFF_PATH}. "
+            if not os.environ.get('UTCI_S3_URL'):
+                error_msg += "Please set UTCI_S3_URL environment variable in Railway."
+            else:
+                error_msg += "File download may have failed. Check Railway logs."
+            print(f"ERROR: {error_msg}")
+            return jsonify({'error': error_msg}), 500
+        
         gdfs, _ = create_shapefiles_and_extract_raster_values(interpolated_routes, GEOTIFF_PATH, OUTPUT_DIR)
         all_routes_gdf = gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True))
 
