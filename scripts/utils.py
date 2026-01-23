@@ -3,7 +3,7 @@
 import requests
 import polyline
 import numpy as np
-from pyproj import Transformer, Geod
+from pyproj import Proj, transform, Geod
 import geopandas as gpd
 import rasterio
 from shapely.geometry import Point
@@ -97,16 +97,9 @@ def interpolate_geopath_equidistant(path, distance_between_points):
     :return: List of interpolated (latitude, longitude) tuples, including original points
     """
     geod = Geod(ellps='WGS84')
-    # Calculate UTM zone from longitude
     utm_zone = int((path[0][1] + 180) / 6) + 1
-    # EPSG:32601-32660 for northern hemisphere, 32701-32760 for southern
-    base_epsg = 32600 if path[0][0] >= 0 else 32700
-    utm_crs = f'EPSG:{base_epsg + utm_zone}'
-    latlon_crs = 'EPSG:4326'
-    
-    # Create transformers
-    to_utm = Transformer.from_crs(latlon_crs, utm_crs, always_xy=True)
-    to_latlon = Transformer.from_crs(utm_crs, latlon_crs, always_xy=True)
+    proj_utm = Proj(f'+proj=utm +zone={utm_zone} +ellps=WGS84')
+    proj_latlon = Proj(proj='latlong', ellps='WGS84')
     
     # Calculate total path distance and determine the number of points to interpolate
     total_distance = 0
@@ -118,9 +111,9 @@ def interpolate_geopath_equidistant(path, distance_between_points):
     interpolated_path = [path[0]]
     
     for i in range(len(path) - 1):
-        # Convert current pair of points to UTM (lon, lat order for always_xy=True)
-        x1, y1 = to_utm.transform(path[i][1], path[i][0])
-        x2, y2 = to_utm.transform(path[i+1][1], path[i+1][0])
+        # Convert current pair of points to UTM
+        x1, y1 = transform(proj_latlon, proj_utm, path[i][1], path[i][0])
+        x2, y2 = transform(proj_latlon, proj_utm, path[i+1][1], path[i+1][0])
         
         # Calculate distance for the current segment to determine segment-specific interpolation
         _, _, segment_distance = geod.inv(path[i][1], path[i][0], path[i+1][1], path[i+1][0])
@@ -132,7 +125,7 @@ def interpolate_geopath_equidistant(path, distance_between_points):
         
         # Convert interpolated points back to lat-lon and add to the output, excluding the first point to avoid duplication
         for j in range(1, len(xs) - 1):
-            lon, lat = to_latlon.transform(xs[j], ys[j])
+            lon, lat = transform(proj_utm, proj_latlon, xs[j], ys[j])
             interpolated_path.append((lat, lon))
     
     interpolated_path.append(path[-1])
