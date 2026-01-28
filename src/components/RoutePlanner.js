@@ -9,9 +9,9 @@ Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmMjg0M
 
 // Distinct colors for routes (constant, defined outside component)
 const routeColors = [
-  '#FF5733', // Red-Orange (Warm)
-  '#33A1FF', // Blue (Cooler)
-  '#33FF57', // Green (Coolest)
+  '#FF5733', // Red-Orange (Warm) - index 0
+  '#33FF57', // Green (Cooler/Middle) - index 1
+  '#33A1FF', // Blue (Coolest) - index 2
   '#FF33A1', // Pink
   
   '#A133FF', // Purple
@@ -528,7 +528,11 @@ const RoutePlanner = () => {
             {visibleRoutes.map((route, index) => {
               console.log(`Route ${index} data:`, route);
               return (
-                <div key={index} className="route-item animate-slide-in">
+                <div
+                  key={index}
+                  className="route-item animate-slide-in"
+                  style={{ '--route-color': routeColors[index % routeColors.length] }}
+                >
                   <span className="route-label">
                     {getRouteLabel(visibleRoutes, index)}
                     <span className="route-utci">
@@ -770,7 +774,11 @@ const RoutePlanner = () => {
           padding: 8px;
           background: #f8f9fa;
           border-radius: 4px;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+          /* Persistent route-colored glow */
+          border: 2px solid var(--route-color, rgba(102, 126, 234, 0.8));
+          box-shadow:
+            0 0 10px var(--route-color, rgba(102, 126, 234, 0.35)),
+            0 0 22px var(--route-color, rgba(102, 126, 234, 0.22));
         }
 
         .route-label {
@@ -853,19 +861,26 @@ const RoutePlanner = () => {
 
         @keyframes newTileGlow {
           0% {
-            box-shadow: 0 0 20px rgba(102, 126, 234, 0.8), 0 0 40px rgba(102, 126, 234, 0.6);
+            box-shadow:
+              0 0 22px var(--route-color, rgba(102, 126, 234, 0.8)),
+              0 0 48px var(--route-color, rgba(102, 126, 234, 0.6));
             background: linear-gradient(135deg, #f8f9fa 0%, #e3f2fd 100%);
-            border: 2px solid rgba(102, 126, 234, 0.8);
+            border: 2px solid var(--route-color, rgba(102, 126, 234, 0.8));
           }
           50% {
-            box-shadow: 0 0 30px rgba(102, 126, 234, 0.9), 0 0 60px rgba(102, 126, 234, 0.7);
+            box-shadow:
+              0 0 30px var(--route-color, rgba(102, 126, 234, 0.9)),
+              0 0 64px var(--route-color, rgba(102, 126, 234, 0.7));
             background: linear-gradient(135deg, #e3f2fd 0%, #f8f9fa 100%);
-            border: 2px solid rgba(102, 126, 234, 1);
+            border: 2px solid var(--route-color, rgba(102, 126, 234, 1));
           }
           100% {
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            /* Keep a subtle persistent glow after the animation finishes */
+            box-shadow:
+              0 0 10px var(--route-color, rgba(102, 126, 234, 0.35)),
+              0 0 22px var(--route-color, rgba(102, 126, 234, 0.22));
             background: #f8f9fa;
-            border: 1px solid transparent;
+            border: 2px solid var(--route-color, rgba(102, 126, 234, 0.8));
           }
         }
 
@@ -877,22 +892,22 @@ const RoutePlanner = () => {
           background: rgba(255, 255, 255, 0.9);
           padding: 4px 8px;
           border-radius: 6px;
-          border: 1px solid #ff6b35;
+          border: 1px solid var(--route-color, #ff6b35);
           animation: shadePulse 2s ease-in-out infinite;
-          box-shadow: 0 0 8px rgba(255, 107, 53, 0.3);
+          box-shadow: 0 0 8px var(--route-color, rgba(255, 107, 53, 0.3));
         }
 
         @keyframes shadePulse {
           0% {
-            box-shadow: 0 0 8px rgba(255, 107, 53, 0.3);
+            box-shadow: 0 0 8px var(--route-color, rgba(255, 107, 53, 0.3));
             transform: scale(1);
           }
           50% {
-            box-shadow: 0 0 12px rgba(255, 107, 53, 0.5);
+            box-shadow: 0 0 12px var(--route-color, rgba(255, 107, 53, 0.5));
             transform: scale(1.02);
           }
           100% {
-            box-shadow: 0 0 8px rgba(255, 107, 53, 0.3);
+            box-shadow: 0 0 8px var(--route-color, rgba(255, 107, 53, 0.3));
             transform: scale(1);
           }
         }
