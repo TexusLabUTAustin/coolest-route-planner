@@ -9,9 +9,18 @@ import rasterio
 from shapely.geometry import Point
 import os
 import pandas as pd
+import time
 from utils import get_directions_polylines, decode_polyline, interpolate_geopath_equidistant, create_shapefiles_and_extract_raster_values, get_lat_lon_from_address
 import traceback
 import sys
+
+# Profiling: set to True to log detailed timings (or use env PROFILE=1)
+PROFILE = os.environ.get('PROFILE', '1') == '1'
+
+def _profile(step_name, elapsed_sec):
+    """Log a profile timing. Use [PROFILE] prefix so logs are greppable."""
+    if PROFILE:
+        print(f"[PROFILE] {step_name}: {elapsed_sec:.3f}s", flush=True)
 
 app = Flask(__name__)
 # Update CORS configuration to explicitly allow the React frontend
@@ -41,6 +50,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Download UTCI file from S3 if it doesn't exist
 def ensure_utci_file():
     """Download UTCI file from S3 if it doesn't exist locally"""
+    t0 = time.perf_counter()
     print(f"Checking for UTCI file at: {GEOTIFF_PATH}")
     print(f"Script directory: {SCRIPT_DIR}")
     print(f"Current working directory: {os.getcwd()}")
@@ -48,6 +58,7 @@ def ensure_utci_file():
     if os.path.exists(GEOTIFF_PATH):
         file_size = os.path.getsize(GEOTIFF_PATH) / (1024 * 1024)  # Size in MB
         print(f"✓ UTCI file found at {GEOTIFF_PATH} ({file_size:.2f} MB)")
+        _profile("startup_ensure_utci_file(exists)", time.perf_counter() - t0)
         return True
     
     print(f"✗ UTCI file not found at {GEOTIFF_PATH}")
@@ -86,6 +97,7 @@ def ensure_utci_file():
         if os.path.exists(GEOTIFF_PATH):
             file_size = os.path.getsize(GEOTIFF_PATH) / (1024 * 1024)
             print(f"\n✓ UTCI file downloaded successfully to {GEOTIFF_PATH} ({file_size:.2f} MB)")
+            _profile("startup_ensure_utci_file(download)", time.perf_counter() - t0)
             return True
         else:
             print(f"\n✗ Download completed but file not found at {GEOTIFF_PATH}")
@@ -108,10 +120,13 @@ def health():
 
 @app.route('/api/process-route', methods=['POST'])
 def process_route():
+    t_request_start = time.perf_counter()
     try:
+        t = time.perf_counter()
         data = request.json
         origin = data.get('origin')
         destination = data.get('destination')
+        _profile("parse_request", time.perf_counter() - t)
 
         if not origin or not destination:
             return jsonify({'error': 'Origin and destination are required'}), 400
@@ -119,8 +134,12 @@ def process_route():
         print(f"Processing route from {origin} to {destination}")
 
         # Get coordinates
+        t = time.perf_counter()
         origin_lat, origin_lon = get_lat_lon_from_address(origin, API_KEY)
+        _profile("geocode_origin", time.perf_counter() - t)
+        t = time.perf_counter()
         destination_lat, destination_lon = get_lat_lon_from_address(destination, API_KEY)
+        _profile("geocode_destination", time.perf_counter() - t)
 
         if origin_lat is None or destination_lat is None:
             return jsonify({'error': 'Failed to find coordinates for locations'}), 400
@@ -132,15 +151,21 @@ def process_route():
 
         # Get routes
         print("Fetching routes from Google Maps API...")
+        t = time.perf_counter()
         google_routes_data = get_directions_polylines(origin_coords, destination_coords, api_key=API_KEY)
+        _profile("google_directions_api", time.perf_counter() - t)
         if not google_routes_data:
             return jsonify({'error': 'No routes found between the specified locations'}), 400
 
         print(f"Found {len(google_routes_data)} routes")
         print("Google routes data:", google_routes_data)  # Debug print
-        
+
+        t = time.perf_counter()
         decoded_coords = [decode_polyline(route['polyline']) for route in google_routes_data]
+        _profile("decode_polylines", time.perf_counter() - t)
+        t = time.perf_counter()
         interpolated_routes = [interpolate_geopath_equidistant(coords, 4) for coords in decoded_coords]
+        _profile("interpolate_routes", time.perf_counter() - t)
 
         # Process routes
         print("Processing routes with UTCI data...")
@@ -154,18 +179,25 @@ def process_route():
                 error_msg += "File download may have failed. Check Railway logs."
             print(f"ERROR: {error_msg}")
             return jsonify({'error': error_msg}), 500
-        
+
+        t = time.perf_counter()
         gdfs, _ = create_shapefiles_and_extract_raster_values(interpolated_routes, GEOTIFF_PATH, OUTPUT_DIR)
+        _profile("create_shapefiles_and_extract_raster_values(TOTAL)", time.perf_counter() - t)
+
+        t = time.perf_counter()
         all_routes_gdf = gpd.GeoDataFrame(pd.concat(gdfs, ignore_index=True))
 
         if all_routes_gdf.crs != 'epsg:4326':
             all_routes_gdf = all_routes_gdf.to_crs('epsg:4326')
+        _profile("concat_gdfs_and_to_crs", time.perf_counter() - t)
 
         # Calculate route statistics
+        t = time.perf_counter()
         all_routes_gdf['route_id'] = np.repeat(np.arange(len(gdfs)), [len(gdf) for gdf in gdfs])
         mean_raster_values = all_routes_gdf.groupby('route_id')['raster_value'].mean()
         min_raster_values = all_routes_gdf.groupby('route_id')['raster_value'].min()
         max_raster_values = all_routes_gdf.groupby('route_id')['raster_value'].max()
+        _profile("route_statistics_groupby", time.perf_counter() - t)
 
         # Calculate percentage of route in shade using a relative threshold
         # Find the overall min and max UTCI values across all routes
@@ -182,6 +214,7 @@ def process_route():
         print(f"Shade threshold (bottom {SHADE_PERCENTILE}%): {shade_threshold:.2f}")
 
         # Calculate the percentage of points below the threshold for each route
+        t = time.perf_counter()
         shade_percentages = []
         for i in range(len(gdfs)):
             route_data = all_routes_gdf[all_routes_gdf['route_id'] == i]
@@ -190,27 +223,30 @@ def process_route():
             shade_percentage = (shade_points / total_points) * 100 if total_points > 0 else 0
             shade_percentages.append(shade_percentage)
             print(f"Route {i}: {shade_percentage:.2f}% in shade (UTCI < {shade_threshold:.2f})")
+        _profile("shade_percentages_loop", time.perf_counter() - t)
 
         # Print only the raster values for each route
-        
-
         # Also print to stderr to ensure it's visible
 
-
         # Write to a file to ensure we can see the values
+        t = time.perf_counter()
         with open(os.path.join(OUTPUT_DIR, "raster_values.txt"), "w") as f:
             f.write("--- Raster Values by Route ---\n")
             for i in range(len(gdfs)):
                 route_utci_values = all_routes_gdf[all_routes_gdf['route_id'] == i]['raster_value'].tolist()
                 f.write(f"Route {i}: {route_utci_values}\n")
             f.write("--- End of Raster Values ---\n")
+        _profile("write_raster_values_txt", time.perf_counter() - t)
 
         # Normalize values
+        t = time.perf_counter()
         min_val = mean_raster_values.min()
         max_val = mean_raster_values.max()
         mean_raster_values_normalized = ((mean_raster_values - min_val) / (max_val - min_val)) * 100
+        _profile("normalize_values", time.perf_counter() - t)
 
         # Prepare response data
+        t = time.perf_counter()
         routes_data = []
         for i, route in enumerate(interpolated_routes):
             # Get all UTCI values for this route
@@ -239,8 +275,11 @@ def process_route():
                 'max': float(max_val)
             }
         }
+        _profile("build_response_data", time.perf_counter() - t)
 
-        print("Successfully processed routes")
+        total_elapsed = time.perf_counter() - t_request_start
+        _profile("TOTAL_request", total_elapsed)
+        print("Successfully processed routes", flush=True)
         return jsonify(response_data)
 
     except Exception as e:

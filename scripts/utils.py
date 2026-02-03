@@ -1,5 +1,6 @@
 # utils.py
 
+import time
 import requests
 import polyline
 import numpy as np
@@ -15,12 +16,22 @@ except ImportError:
 
 
 
+def _log_profile(step_name, elapsed_sec):
+    """Log profile timing with [PROFILE] prefix for greppable logs."""
+    print(f"[PROFILE] utils.{step_name}: {elapsed_sec:.3f}s", flush=True)
+
+
 def get_directions_polylines(origin, destination, mode='walking', api_key=''):
+    t0 = time.perf_counter()
     url = f"https://maps.googleapis.com/maps/api/directions/json?origin={origin}&destination={destination}&mode={mode}&alternatives=true&key={api_key}"
 
     try:
+        t = time.perf_counter()
         response = requests.get(url)
+        _log_profile("directions_http_request", time.perf_counter() - t)
+        t = time.perf_counter()
         data = response.json()
+        _log_profile("directions_json_parse", time.perf_counter() - t)
         routes_data = []
 
         if data['status'] == 'OK':
@@ -38,6 +49,7 @@ def get_directions_polylines(origin, destination, mode='walking', api_key=''):
                     'duration': duration,
                     'distance': distance
                 })
+            _log_profile("get_directions_polylines(TOTAL)", time.perf_counter() - t0)
             return routes_data
         else:
             print("Failed to retrieve directions")
@@ -133,45 +145,71 @@ def interpolate_geopath_equidistant(path, distance_between_points):
 
 
 def create_shapefiles_and_extract_raster_values(interpolated_routes, geotiff_path, output_dir):
+    t_total = time.perf_counter()
     os.makedirs(output_dir, exist_ok=True)
     shapefile_paths = {}
     gdfs = []
 
-    with rasterio.open(geotiff_path) as src:
+    t = time.perf_counter()
+    src = rasterio.open(geotiff_path)
+    _log_profile("raster_open", time.perf_counter() - t)
+    try:
+        t = time.perf_counter()
         raster_values = src.read(1)
+        _log_profile("raster_read_full_band", time.perf_counter() - t)
 
         for i, route in enumerate(interpolated_routes):
+            t_route = time.perf_counter()
+
+            t = time.perf_counter()
             points = [Point(lon, lat) for lat, lon in route]
             gdf = gpd.GeoDataFrame(geometry=points, crs="EPSG:4326")
-            gdf = gdf.to_crs(epsg=6343)
+            _log_profile(f"route_{i}_gdf_create", time.perf_counter() - t)
 
+            t = time.perf_counter()
+            gdf = gdf.to_crs(epsg=6343)
+            _log_profile(f"route_{i}_to_crs", time.perf_counter() - t)
+
+            t = time.perf_counter()
             raster_values_list = []
             for point in gdf.geometry:
                 row, col = src.index(point.x, point.y)
                 raster_value = raster_values[row, col]
                 raster_values_list.append(raster_value)
+            _log_profile(f"route_{i}_sample_points(n={len(gdf)})", time.perf_counter() - t)
 
             gdf['raster_value'] = raster_values_list
             gdfs.append(gdf)
 
+            t = time.perf_counter()
             shapefile_name = f"route_{i+1}_with_raster_values.shp"
             shapefile_path = os.path.join(output_dir, shapefile_name)
             gdf.to_file(shapefile_path)
-            shapefile_paths[i + 1] = shapefile_path
+            _log_profile(f"route_{i}_to_file_shp", time.perf_counter() - t)
 
+            shapefile_paths[i + 1] = shapefile_path
+            _log_profile(f"route_{i}(TOTAL)", time.perf_counter() - t_route)
+    finally:
+        src.close()
+
+    _log_profile("create_shapefiles_and_extract_raster_values(TOTAL_utils)", time.perf_counter() - t_total)
     return gdfs, shapefile_paths
 
 import requests
 
 def get_lat_lon_from_address(address, api_key):
     """Convert an address to latitude and longitude using Google Geocoding API."""
+    t0 = time.perf_counter()
     base_url = "https://maps.googleapis.com/maps/api/geocode/json"
     params = {"address": address, "key": api_key}
+    t = time.perf_counter()
     response = requests.get(base_url, params=params)
+    _log_profile("geocode_http_request", time.perf_counter() - t)
     if response.status_code == 200:
         data = response.json()
         if data['status'] == 'OK':
             location = data['results'][0]['geometry']['location']
+            _log_profile("get_lat_lon_from_address(TOTAL)", time.perf_counter() - t0)
             return (location['lat'], location['lng'])
         else:
             return None, None
