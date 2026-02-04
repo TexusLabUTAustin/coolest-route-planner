@@ -476,7 +476,7 @@ const RoutePlanner = () => {
             
             <div className="partner-logo">
               <div className="logo-placeholder">
-                <img src="/Colab_blue_logo.avif" alt="UT City CoLab" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <img src="/colab_logo.png" alt="UT City CoLab" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               </div>
             </div>
           </div>
