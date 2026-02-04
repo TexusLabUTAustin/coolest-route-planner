@@ -2,6 +2,8 @@
 
 This guide will help you upload the `UTCI_1600.tif` file to AWS S3 and configure your Railway backend to download it automatically.
 
+**Faster option (recommended):** Use the **.npz** format instead of .tif for smaller size and faster download/load. See **"Using .npz (faster)"** at the end of this guide.
+
 ## Step 1: Create AWS S3 Bucket
 
 1. **Sign in to AWS Console**
@@ -127,6 +129,19 @@ aws s3 presign s3://coolest-route-planner-utci/UTCI_1600.tif --expires-in 315360
 - **Public Bucket**: Anyone with the URL can download (fine for public data)
 - **Private Bucket + Pre-signed URL**: More secure, but URL expires
 - **IAM User**: Create a dedicated IAM user with minimal S3 permissions for production
+
+## Using .npz (faster download and load)
+
+The backend can use a NumPy `.npz` file instead of the GeoTIFF. It stores the same grid (values + transform) but is often smaller (compressed) and loads much faster (no TIFF decoding).
+
+1. **Convert locally** (when you have `UTCI_1600.tif`):
+   ```bash
+   cd scripts
+   python convert_utci_to_npz.py UTCI_1600.tif UTCI_1600.npz
+   ```
+2. **Upload** `UTCI_1600.npz` to your S3 bucket (same as Step 2, but upload the .npz file).
+3. **Make it public** (same as Step 3) and copy the object URL.
+4. **In Railway**: Set **`UTCI_NPZ_URL`** to that URL (instead of or in addition to `UTCI_S3_URL`). The backend will prefer .npz if present.
 
 ## Troubleshooting
 

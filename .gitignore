@@ -8,6 +8,8 @@ yarn-error.log*
 scripts/UTCI_1600.tif
 scripts/UTCI_1600.tif.aux.xml
 scripts/output/
+scripts/UTCI_1600.npz
+
 
 # Production builds
 build/

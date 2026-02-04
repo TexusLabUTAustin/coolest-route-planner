@@ -165,6 +165,7 @@ const RoutePlanner = () => {
 
       // Add routes one by one with delays
       routes.forEach((route, index) => {
+        const uiIndex = Number.isFinite(route.uiIndex) ? route.uiIndex : index;
         // Convert coordinates to Cartesian3 with terrain height
         const positions = route.coordinates.map(coord => {
           const cartographic = Cartographic.fromDegrees(coord[1], coord[0]);
@@ -175,7 +176,7 @@ const RoutePlanner = () => {
         });
 
         // Calculate delay for this route (each route starts after the previous one)
-        const routeDelay = index * (animationDuration + delayBetweenRoutes);
+        const routeDelay = uiIndex * (animationDuration + delayBetweenRoutes);
         
         // Create animated positions with staggered timing
         const animatedPositions = new CallbackProperty((time) => {
@@ -197,7 +198,7 @@ const RoutePlanner = () => {
           polyline: {
             positions: animatedPositions,
             width: 9,
-            material: new Color.fromCssColorString(routeColors[index % routeColors.length]),
+            material: new Color.fromCssColorString(routeColors[uiIndex % routeColors.length]),
             clampToGround: false, // Ensure the line is not clamped to ground
           },
         });
@@ -392,14 +393,19 @@ const RoutePlanner = () => {
       
       // Sort routes by UTCI (warmest first, coolest last)
       const sortedRoutes = [...newRoutes].sort((a, b) => b.mean_utci - a.mean_utci);
+      // Attach a stable UI index so colors/tiles/lines always stay aligned
+      const sortedRoutesWithUiIndex = sortedRoutes.map((route, uiIndex) => ({
+        ...route,
+        uiIndex,
+      }));
       
       setTimeout(() => {
-        setRoutes(sortedRoutes);
+        setRoutes(sortedRoutesWithUiIndex);
         setVisibleRoutes([]); // Reset visible routes
         
         // Animate routes appearing one by one in sidebar when map routes start
-        sortedRoutes.forEach((route, index) => {
-          const routeDelay = index * (4000 + 1000); // Match map animation timing (4s + 1s delay)
+        sortedRoutesWithUiIndex.forEach((route) => {
+          const routeDelay = route.uiIndex * (4000 + 1000); // Match map animation timing (4s + 1s delay)
           setTimeout(() => {
             setVisibleRoutes(prev => [...prev, route]);
             

@@ -144,52 +144,89 @@ def interpolate_geopath_equidistant(path, distance_between_points):
     return interpolated_path
 
 
-def create_shapefiles_and_extract_raster_values(interpolated_routes, geotiff_path, output_dir):
+def _sample_from_npz(raster_values, transform_tuple, shape_2d, point, scale=1.0):
+    """Get raster value at (point.x, point.y). Match rasterio: use floor for (row,col) so .npz matches .tif."""
+    from rasterio.transform import Affine
+    aff = Affine(*transform_tuple)
+    col, row = ~aff * (point.x, point.y)
+    # Use floor to match rasterio's src.index(x, y) default (op=numpy.floor)
+    row, col = int(np.floor(row)), int(np.floor(col))
+    h, w = shape_2d[0], shape_2d[1]
+    row = max(0, min(row, h - 1))
+    col = max(0, min(col, w - 1))
+    val = float(raster_values[row, col])
+    return val / scale if scale != 1.0 else val
+
+
+def create_shapefiles_and_extract_raster_values(interpolated_routes, raster_path, output_dir):
+    """Load raster from .tif (rasterio) or .npz (numpy). raster_path can be path to .tif or .npz."""
     t_total = time.perf_counter()
     os.makedirs(output_dir, exist_ok=True)
     shapefile_paths = {}
     gdfs = []
+    use_npz = raster_path.lower().endswith(".npz")
 
-    t = time.perf_counter()
-    src = rasterio.open(geotiff_path)
-    _log_profile("raster_open", time.perf_counter() - t)
-    try:
+    if use_npz:
         t = time.perf_counter()
-        raster_values = src.read(1)
-        _log_profile("raster_read_full_band", time.perf_counter() - t)
-
-        for i, route in enumerate(interpolated_routes):
-            t_route = time.perf_counter()
-
+        data = np.load(raster_path, allow_pickle=False)
+        raster_values = data["values"]
+        transform_tuple = tuple(data["transform"].tolist())
+        sh = data.get("shape", np.array(raster_values.shape))
+        shape_2d = (int(sh[0]), int(sh[1])) if sh.size >= 2 else raster_values.shape
+        # UTCI values only: stored as int16 * scale; divide by scale when sampling (lat/lon unchanged)
+        scale = float(data["scale"]) if "scale" in data else 1.0
+        _log_profile("npz_load", time.perf_counter() - t)
+    else:
+        t = time.perf_counter()
+        src = rasterio.open(raster_path)
+        _log_profile("raster_open", time.perf_counter() - t)
+        try:
             t = time.perf_counter()
-            points = [Point(lon, lat) for lat, lon in route]
-            gdf = gpd.GeoDataFrame(geometry=points, crs="EPSG:4326")
-            _log_profile(f"route_{i}_gdf_create", time.perf_counter() - t)
+            raster_values = src.read(1)
+            _log_profile("raster_read_full_band", time.perf_counter() - t)
+            transform_tuple = None
+            shape_2d = raster_values.shape
+        except Exception:
+            src.close()
+            raise
 
-            t = time.perf_counter()
-            gdf = gdf.to_crs(epsg=6343)
-            _log_profile(f"route_{i}_to_crs", time.perf_counter() - t)
+    for i, route in enumerate(interpolated_routes):
+        t_route = time.perf_counter()
 
-            t = time.perf_counter()
-            raster_values_list = []
+        t = time.perf_counter()
+        points = [Point(lon, lat) for lat, lon in route]
+        gdf = gpd.GeoDataFrame(geometry=points, crs="EPSG:4326")
+        _log_profile(f"route_{i}_gdf_create", time.perf_counter() - t)
+
+        t = time.perf_counter()
+        gdf = gdf.to_crs(epsg=6343)
+        _log_profile(f"route_{i}_to_crs", time.perf_counter() - t)
+
+        t = time.perf_counter()
+        raster_values_list = []
+        if use_npz:
+            for point in gdf.geometry:
+                val = _sample_from_npz(raster_values, transform_tuple, shape_2d, point, scale)
+                raster_values_list.append(val)
+        else:
             for point in gdf.geometry:
                 row, col = src.index(point.x, point.y)
-                raster_value = raster_values[row, col]
-                raster_values_list.append(raster_value)
-            _log_profile(f"route_{i}_sample_points(n={len(gdf)})", time.perf_counter() - t)
+                raster_values_list.append(raster_values[row, col])
+        _log_profile(f"route_{i}_sample_points(n={len(gdf)})", time.perf_counter() - t)
 
-            gdf['raster_value'] = raster_values_list
-            gdfs.append(gdf)
+        gdf["raster_value"] = raster_values_list
+        gdfs.append(gdf)
 
-            t = time.perf_counter()
-            shapefile_name = f"route_{i+1}_with_raster_values.shp"
-            shapefile_path = os.path.join(output_dir, shapefile_name)
-            gdf.to_file(shapefile_path)
-            _log_profile(f"route_{i}_to_file_shp", time.perf_counter() - t)
+        t = time.perf_counter()
+        shapefile_name = f"route_{i+1}_with_raster_values.shp"
+        shapefile_path = os.path.join(output_dir, shapefile_name)
+        gdf.to_file(shapefile_path)
+        _log_profile(f"route_{i}_to_file_shp", time.perf_counter() - t)
 
-            shapefile_paths[i + 1] = shapefile_path
-            _log_profile(f"route_{i}(TOTAL)", time.perf_counter() - t_route)
-    finally:
+        shapefile_paths[i + 1] = shapefile_path
+        _log_profile(f"route_{i}(TOTAL)", time.perf_counter() - t_route)
+
+    if not use_npz:
         src.close()
 
     _log_profile("create_shapefiles_and_extract_raster_values(TOTAL_utils)", time.perf_counter() - t_total)

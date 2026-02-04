@@ -39,9 +39,10 @@ CORS(app, resources={
 })
 
 API_KEY = "AIzaSyDA1XsDPGVPIJGSHi7-NTRVZODYIlbI7OE"
-# Get the absolute path to the UTCI file
+# Get the absolute path to the UTCI file (.npz preferred for faster load; .tif fallback)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GEOTIFF_PATH = os.path.join(SCRIPT_DIR, "UTCI_1600.tif")
+GEOTIFF_NPZ_PATH = os.path.join(SCRIPT_DIR, "UTCI_1600.npz")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 
 # Create output directory if it doesn't exist
@@ -54,14 +55,47 @@ def ensure_utci_file():
     print(f"Checking for UTCI file at: {GEOTIFF_PATH}")
     print(f"Script directory: {SCRIPT_DIR}")
     print(f"Current working directory: {os.getcwd()}")
-    
+
+    # Prefer .npz (faster load, often smaller)
+    npz_url = os.environ.get("UTCI_NPZ_URL")
+    if os.path.exists(GEOTIFF_NPZ_PATH):
+        file_size = os.path.getsize(GEOTIFF_NPZ_PATH) / (1024 * 1024)
+        print(f"✓ UTCI .npz found at {GEOTIFF_NPZ_PATH} ({file_size:.2f} MB)")
+        _profile("startup_ensure_utci_file(exists_npz)", time.perf_counter() - t0)
+        return True
+    if npz_url:
+        try:
+            print(f"📥 Downloading UTCI .npz from S3...")
+            import urllib.request
+            import ssl
+            os.makedirs(os.path.dirname(GEOTIFF_NPZ_PATH), exist_ok=True)
+            last_logged_percent = [-5.0]
+            def show_progress(block_num, block_size, total_size):
+                if total_size > 0:
+                    percent = min(block_num * block_size * 100 / total_size, 100)
+                    if percent - last_logged_percent[0] >= 5.0 or percent >= 99.9:
+                        last_logged_percent[0] = percent
+                        mb = block_num * block_size / (1024 * 1024)
+                        mb_total = total_size / (1024 * 1024)
+                        print(f"📥 Downloading: {percent:.1f}% ({mb:.1f}/{mb_total:.1f} MB)", flush=True)
+            urllib.request.urlretrieve(npz_url, GEOTIFF_NPZ_PATH, reporthook=show_progress)
+            if os.path.exists(GEOTIFF_NPZ_PATH):
+                file_size = os.path.getsize(GEOTIFF_NPZ_PATH) / (1024 * 1024)
+                print(f"\n✓ UTCI .npz downloaded ({file_size:.2f} MB)")
+                _profile("startup_ensure_utci_file(download_npz)", time.perf_counter() - t0)
+                return True
+        except Exception as e:
+            print(f"✗ Error downloading .npz: {e}")
+            import traceback
+            print(traceback.format_exc())
+
     if os.path.exists(GEOTIFF_PATH):
-        file_size = os.path.getsize(GEOTIFF_PATH) / (1024 * 1024)  # Size in MB
-        print(f"✓ UTCI file found at {GEOTIFF_PATH} ({file_size:.2f} MB)")
-        _profile("startup_ensure_utci_file(exists)", time.perf_counter() - t0)
+        file_size = os.path.getsize(GEOTIFF_PATH) / (1024 * 1024)
+        print(f"✓ UTCI .tif found at {GEOTIFF_PATH} ({file_size:.2f} MB)")
+        _profile("startup_ensure_utci_file(exists_tif)", time.perf_counter() - t0)
         return True
     
-    print(f"✗ UTCI file not found at {GEOTIFF_PATH}")
+    print(f"✗ UTCI file not found (checked .npz and .tif)")
     
     s3_url = os.environ.get('UTCI_S3_URL')
     if not s3_url:
@@ -82,15 +116,19 @@ def ensure_utci_file():
         # Ensure directory exists
         os.makedirs(os.path.dirname(GEOTIFF_PATH), exist_ok=True)
         
-        # Download with progress
+        # Download with progress (throttle: log every ~5% so Railway doesn't get 5000+ lines)
+        last_logged_percent = [-5.0]  # use list so inner function can mutate
+
         def show_progress(block_num, block_size, total_size):
             if total_size > 0:
                 downloaded = block_num * block_size
                 percent = min(downloaded * 100 / total_size, 100)
-                mb_downloaded = downloaded / (1024 * 1024)
-                mb_total = total_size / (1024 * 1024)
-                print(f"\r📥 Downloading: {percent:.1f}% ({mb_downloaded:.1f}/{mb_total:.1f} MB)", end='', flush=True)
-        
+                if percent - last_logged_percent[0] >= 5.0 or percent >= 99.9:
+                    last_logged_percent[0] = percent
+                    mb_downloaded = downloaded / (1024 * 1024)
+                    mb_total = total_size / (1024 * 1024)
+                    print(f"📥 Downloading: {percent:.1f}% ({mb_downloaded:.1f}/{mb_total:.1f} MB)", flush=True)
+
         urllib.request.urlretrieve(s3_url, GEOTIFF_PATH, reporthook=show_progress)
         
         # Verify download
@@ -170,18 +208,30 @@ def process_route():
         # Process routes
         print("Processing routes with UTCI data...")
         
-        # Verify UTCI file exists
-        if not os.path.exists(GEOTIFF_PATH):
-            error_msg = f"UTCI file not found at {GEOTIFF_PATH}. "
-            if not os.environ.get('UTCI_S3_URL'):
-                error_msg += "Please set UTCI_S3_URL environment variable in Railway."
+        # Use .npz if present (faster load), else .tif
+        raster_path = GEOTIFF_NPZ_PATH if os.path.exists(GEOTIFF_NPZ_PATH) else GEOTIFF_PATH
+        if not os.path.exists(raster_path):
+            error_msg = f"UTCI file not found (checked .npz and .tif). "
+            if not os.environ.get('UTCI_NPZ_URL') and not os.environ.get('UTCI_S3_URL'):
+                error_msg += "Set UTCI_NPZ_URL or UTCI_S3_URL in Railway."
             else:
-                error_msg += "File download may have failed. Check Railway logs."
+                error_msg += "Download may have failed. Check Railway logs."
             print(f"ERROR: {error_msg}")
             return jsonify({'error': error_msg}), 500
 
+        # Log which raster is used (and .npz scale) so local vs script can be compared after restart
+        raster_label = "NPZ" if raster_path.lower().endswith(".npz") else "TIF"
+        npz_scale = None
+        if raster_label == "NPZ":
+            try:
+                d = np.load(raster_path, allow_pickle=False)
+                npz_scale = float(d["scale"]) if "scale" in d else "missing"
+            except Exception:
+                npz_scale = "error"
+        print(f"Using raster: {raster_label} path={os.path.basename(raster_path)}" + (f" scale={npz_scale}" if npz_scale is not None else ""), flush=True)
+
         t = time.perf_counter()
-        gdfs, _ = create_shapefiles_and_extract_raster_values(interpolated_routes, GEOTIFF_PATH, OUTPUT_DIR)
+        gdfs, _ = create_shapefiles_and_extract_raster_values(interpolated_routes, raster_path, OUTPUT_DIR)
         _profile("create_shapefiles_and_extract_raster_values(TOTAL)", time.perf_counter() - t)
 
         t = time.perf_counter()
