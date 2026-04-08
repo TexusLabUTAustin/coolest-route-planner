@@ -53,3 +53,6 @@ scripts/output/
 
 # Logs
 *.log
+
+# iOS app (kept local / separate distribution)
+CoolestRoute-iOS/
