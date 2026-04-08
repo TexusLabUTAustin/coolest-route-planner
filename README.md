@@ -1,4 +1,4 @@
-# Coolest Route Planner
+# CoolPath
 
 A React-based route planning application that uses Cesium 3D visualization to help users find the coolest (most comfortable) routes based on UTCI (Universal Thermal Climate Index) data.
 

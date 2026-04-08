@@ -316,6 +316,14 @@ def process_route():
             routes_data.append(route_data)
             #print(f"Route {i} data:", route_data)  # Debug print
 
+        # Order: warmest first → coolest last. Rank by shade % (not mean UTCI).
+        # Coolest = most shade (highest %); warmest = least shade (lowest %).
+        routes_data.sort(key=lambda r: (r['shade_percentage'], -r['mean_utci']))
+        print(
+            "Routes ordered warmest-first: shade_percentage ascending; ties: higher mean_utci",
+            flush=True,
+        )
+
         response_data = {
             'routes': routes_data,
             'origin': {'lat': origin_lat, 'lng': origin_lon},

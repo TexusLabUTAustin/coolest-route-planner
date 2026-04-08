@@ -7,11 +7,11 @@ import '../cesiumConfig';
 // Set your Cesium ion access token
 Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmMjg0M2EzZC1kM2Q5LTRiOTYtODdhZi04NjA0OGQyZDZkZDMiLCJpZCI6MjkwODI1LCJpYXQiOjE3NDM3NDI0OTl9.WtGmTNEnb4Re5wuCI_F0UFmN7hHF0lEoyxyjBVSkx7s';
 
-// Distinct colors for routes (constant, defined outside component)
+// Index 0 = warmest (least shade) … last = coolest (most shade); ranked by shade %, not mean UTCI.
 const routeColors = [
-  '#FF5733', // Red-Orange (Warm) - index 0
-  '#33FF57', // Green (Cooler/Middle) - index 1
-  '#33A1FF', // Blue (Coolest) - index 2
+  '#FF5733', // Warm — index 0
+  '#33FF57', // Middle
+  '#33A1FF', // Coolest — last index when 3 routes
   '#FF33A1', // Pink
   
   '#A133FF', // Purple
@@ -38,17 +38,13 @@ const RoutePlanner = () => {
   const tilesetRef = useRef(null);
   const imageryLayerRef = useRef(null);
 
-  // Get route label based on sorted order (warmest first, coolest last)
   const getRouteLabel = (routes, index) => {
     if (!routes || routes.length === 0) return `Route ${index + 1}`;
-    
-    // Routes are now sorted by UTCI (warmest first, coolest last)
-    // index 0 = Warmest (Warm), index 1 = Middle (Cooler), index 2 = Coolest
-    if (index === 0) return "Warm";
-    if (index === 1) return "Cooler";
-    if (index === 2) return "Coolest";
-    
-    return `Route ${index + 1}`;
+    const n = routes.length;
+    if (n <= 1) return "Route";
+    if (index === 0) return "Warmest";
+    if (index === n - 1) return "Coolest";
+    return "Cooler";
   };
 
   useEffect(() => {
@@ -391,8 +387,12 @@ const RoutePlanner = () => {
       setOriginCoords([orig.lat, orig.lng]);
       setDestinationCoords([dest.lat, dest.lng]);
       
-      // Sort routes by UTCI (warmest first, coolest last)
-      const sortedRoutes = [...newRoutes].sort((a, b) => b.mean_utci - a.mean_utci);
+      // Warmest first (least shade), coolest last (most shade); ties: higher mean UTCI first
+      const sortedRoutes = [...newRoutes].sort((a, b) => {
+        const ds = (a.shade_percentage ?? 0) - (b.shade_percentage ?? 0);
+        if (ds !== 0) return ds;
+        return (b.mean_utci ?? 0) - (a.mean_utci ?? 0);
+      });
       // Attach a stable UI index so colors/tiles/lines always stay aligned
       const sortedRoutesWithUiIndex = sortedRoutes.map((route, uiIndex) => ({
         ...route,
@@ -452,7 +452,7 @@ const RoutePlanner = () => {
       <div className="top-banner">
         <div className="banner-content">
           <div className="title-group">
-            <h2>Coolest Route Planner</h2>
+            <h2>CoolPath</h2>
           </div>
           
           <div className="partners-section">
@@ -631,18 +631,20 @@ const RoutePlanner = () => {
           display: flex;
           align-items: center;
           padding: 15px 15px 15px 15px;
-         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          background: white;
           border-radius: 10px;
-          color: white;
         }
 
         .title-group h2 {
           margin: 0;
           margin-left: 0px;
-          font-size:2.2em;
-          font-weight: 1200;
-          font-family: 'Montserrat', sans-serif;
-          color: white;
+          font-size: 3.2em;
+          font-weight: 800;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
         }
 
         .partners-section {
